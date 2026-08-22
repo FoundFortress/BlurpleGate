@@ -1,0 +1,26 @@
+#   ____  _                  _       _____       _
+# |  _ \| |                | |     / ____|     | |
+# | |_) | |_   _ _ __ _ __ | | ___| |  __  __ _| |_ ___
+# |  _ <| | | | | '__| '_ \| |/ _ \ | |_ |/ _` | __/ _ \
+# | |_) | | |_| | |  | |_) | |  __/ |__| | (_| | ||  __/
+# |____/|_|\__,_|_|  | .__/|_|\___|\_____|\__,_|\__\___|
+#                    | |
+#                    |_|
+#
+# BlurpleGate | A FoundFortress Project
+
+# DO NOT CHANGE
+config_version: 1
+
+# OAuth2 Configuration
+oauth2:
+  client_id: 'REPLACEME'
+  client_secret: 'REPLACEME'
+  redirect_uri: 'REPLACEME'
+
+# Dialog Customization
+dialog:
+  header: 'Link Your Discord Account To Continue'
+  body: 'To join the FoundFortress Pre-Alpha, please link your Discord account.'
+  button: 'Click Here To Log In With Discord'
+  footer: 'This will add you to our Discord server upon connecting. You can leave at any time.'

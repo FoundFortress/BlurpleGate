@@ -1,0 +1,15 @@
+name: BlurpleGate
+version: '${version}'
+
+main: net.foundfortress.blurpleGate.BlurpleGate
+api-version: '26.2'
+load: POSTWORLD
+
+authors: [ totallynotseth ]
+website: foundfortress.net
+
+dependencies:
+  server:
+    DiscordSRV:
+      required: true
+      join-classpath: true

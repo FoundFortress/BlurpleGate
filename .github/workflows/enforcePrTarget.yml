@@ -1,0 +1,19 @@
+name: "Validate PR Target Branch"
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  check-target-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR Target Branch
+        run: |
+          echo "PR Head Ref (Source): ${{ github.head_ref }}"
+          echo "PR Base Ref (Target): ${{ github.base_ref }}"
+          
+          if [ "${{ github.base_ref }}" = "master" ] && [ "${{ github.head_ref }}" != "develop" ]; then
+            echo "ERROR: Pull Requests targeting 'master' must originate from the 'develop' branch."
+            exit 1
+          fi

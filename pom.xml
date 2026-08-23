@@ -55,6 +55,10 @@
             <id>papermc-repo</id>
             <url>https://repo.papermc.io/repository/maven-public/</url>
         </repository>
+        <repository>
+            <id>Scarsz-Nexus</id>
+            <url>https://nexus.scarsz.me/content/groups/public/</url>
+        </repository>
     </repositories>
 
     <dependencies>
@@ -70,11 +74,10 @@
             <version>6.5.0</version>
         </dependency>
         <dependency>
-            <groupId>github.scarsz</groupId>
-            <artifactId>DiscordSRV</artifactId>
+            <groupId>com.discordsrv</groupId>
+            <artifactId>discordsrv</artifactId>
             <version>1.30.5</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/libs/DiscordSRV-Build-1.30.5.jar</systemPath>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

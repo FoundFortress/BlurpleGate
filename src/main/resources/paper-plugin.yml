@@ -13,3 +13,6 @@ dependencies:
     DiscordSRV:
       required: true
       join-classpath: true
+    floodgate:
+      required: false
+      join-classpath: true

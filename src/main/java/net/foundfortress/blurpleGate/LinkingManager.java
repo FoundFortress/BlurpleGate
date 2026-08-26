@@ -24,7 +24,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class LinkingManager {
-    private final Map<UUID, CompletableFuture<Boolean>> completableFutureMap = new ConcurrentHashMap<>();
+    private final Map<UUID, CompletableFuture<LinkResult>> completableFutureMap = new ConcurrentHashMap<>();
     private final Map<String, UUID> discordStateMap = new ConcurrentHashMap<>();
     private final SecureRandom random = new SecureRandom();
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -43,11 +43,9 @@ public class LinkingManager {
         defaultPostBodyData.put("grant_type", "authorization_code");
     }
 
-    public LinkingState startLinking(UUID uuid) {
-        CompletableFuture<Boolean> future = new CompletableFuture<>();
+    public LinkingState startLinking(UUID uuid, String discordState) {
+        CompletableFuture<LinkResult> future = new CompletableFuture<>();
         completableFutureMap.put(uuid, future);
-
-        String discordState = generateDiscordState();
         discordStateMap.put(discordState, uuid);
 
         return new LinkingState(future, discordState, uuid);
@@ -94,15 +92,19 @@ public class LinkingManager {
             logger.warn(e.toString());
         }
 
-        completeFuture(discordStateMap.get(discordState), true);
+        completeFuture(discordStateMap.get(discordState), LinkResult.SUCCESS);
+    }
+
+    public void redisplayLinkPromptWithState(String discordState) {
+        completeFuture(discordStateMap.get(discordState), LinkResult.REDISPLAY);
     }
 
     public void cancelLinkingWithState(String discordState) {
-        completeFuture(discordStateMap.get(discordState), false);
+        completeFuture(discordStateMap.get(discordState), LinkResult.FAIL);
     }
 
     public void cancelLinkingWithUuid(UUID uuid) {
-        completeFuture(uuid, false);
+        completeFuture(uuid, LinkResult.FAIL);
     }
 
     public void cleanupLinking(LinkingState linkingState) {
@@ -110,18 +112,14 @@ public class LinkingManager {
         discordStateMap.remove(linkingState.discordState());
     }
 
-    private void completeFuture(UUID uuid, boolean value) {
-        CompletableFuture<Boolean> future = completableFutureMap.get(uuid);
+    private void completeFuture(UUID uuid, LinkResult value) {
+        CompletableFuture<LinkResult> future = completableFutureMap.get(uuid);
         if (future != null) future.complete(value);
     }
 
-    private String generateDiscordState() {
-        byte[] stateBytes = new byte[16];
-        random.nextBytes(stateBytes);
-        return Base64
-            .getUrlEncoder()
-            .withoutPadding()
-            .encodeToString(stateBytes);
+    public String generateDiscordState() {
+        int discordState = random.nextInt(1_000_000);
+        return String.format("%06d", discordState);
     }
 
     private HttpRequest.BodyPublisher generatePostBody(Map<String, String> data) {

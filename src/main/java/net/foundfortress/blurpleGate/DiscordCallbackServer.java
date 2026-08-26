@@ -19,7 +19,8 @@ public class DiscordCallbackServer {
     public void start(int port) throws IOException {
         server = HttpServer.create(new InetSocketAddress(port), 0);
 
-        server.createContext("/link/", new LinkHandler());
+        server.createContext("/", new RootHandler());
+        server.createContext("/link", new LinkHandler());
         server.createContext("/callback", new CallbackHandler());
         server.createContext("/favicon.ico", new StaticHandler("/img/favicon.ico",
             StaticHandler.ContentType.ICO));
@@ -46,13 +47,55 @@ public class DiscordCallbackServer {
         }
     }
 
+    private static class RootHandler implements HttpHandler {
+        public static final String HTML_TEMPLATE = """
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="utf-8">
+                <title>BlurpleGate</title>
+                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+                <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+                <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+                <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+                <link rel="manifest" href="/site.webmanifest">
+            </head>
+            <body>
+                <main class="container">
+                    <section>
+                        <h1>Enter Your Link Code Here</h1>
+                        <form action="/link" method="GET">
+                            <input placeholder="000000" maxlength="6" required minlength="6" autofocus name="state" />
+                            <button type="submit">Submit</button>
+                        </form>
+                    </section>
+                 </main>
+                 <footer class="container">
+                    <small>Powered by <a href="https://plugins.foundfortress.net/blurplegate">BlurpleGate</a></small>
+                 </footer>
+            </body>
+            </html>
+            """;
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            exchange.getResponseHeaders().set("Content-Type", "text/html");
+            exchange.sendResponseHeaders(200, HTML_TEMPLATE.getBytes().length);
+
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(HTML_TEMPLATE.getBytes());
+            }
+        }
+    }
+
     private static class LinkHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            String discordState = exchange
-                .getRequestURI()
-                .getPath()
-                .substring("/link/".length());
+            String discordState = getQueryParams(exchange).get("state");
+
+            if(getQueryParams(exchange).get("java") != null) {
+                BlurpleGate.getPlugin().getLinkingManager().redisplayLinkPromptWithState(discordState);
+            }
 
             exchange.getResponseHeaders().set("Location",
                 "https://discord.com/oauth2/authorize?client_id=1534963763432783903&response_type=code&" +
@@ -78,13 +121,13 @@ public class DiscordCallbackServer {
             </head>
             <body>
                 <main class="container">
-                  <section>
-                    <h1>%s</h1>
-                    <p>%s</p>
-                  </section>
+                    <section>
+                        <h1>%s</h1>
+                        <p>%s</p>
+                    </section>
                 </main>
                 <footer class="container">
-                  <small>Powered by <a href="https://plugins.foundfortress.net/blurplegate">BlurpleGate</a></small>
+                    <small>Powered by <a href="https://plugins.foundfortress.net/blurplegate">BlurpleGate</a></small>
                 </footer>
             </body>
             </html>

@@ -15,8 +15,11 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.plugin.Plugin;
+import org.geysermc.floodgate.api.FloodgateApi;
 
 import java.util.List;
 import java.util.UUID;
@@ -33,19 +36,29 @@ public class DialogListener implements Listener {
     @EventHandler
     public void onPlayerConfigure(AsyncPlayerConnectionConfigureEvent event) {
         PlayerConfigurationConnection connection = event.getConnection();
-        UUID uuid = connection.getProfile().getId();
-        if (uuid == null) return;
+        UUID mcUuid = connection.getProfile().getId();
+        if (mcUuid == null) return;
 
+        Plugin floodgate = Bukkit.getPluginManager().getPlugin("floodgate");
+        boolean bedrockEdition = floodgate != null && floodgate.isEnabled() &&
+            FloodgateApi.getInstance().isFloodgatePlayer(mcUuid);
+
+        LinkingState linkingState;
+        LinkResult linkResult;
         LinkingManager linkingManager = BlurpleGate.getPlugin().getLinkingManager();
-        LinkingState linkingState = linkingManager.startLinking(uuid);
-
         Audience audience = connection.getAudience();
-        audience.showDialog(generateMinecraftDialog(linkingState.discordState()));
+        String discordState = linkingManager.generateDiscordState();
 
-        if (!linkingState.getLinkingResult()) {
-            audience.closeDialog();
-            connection.disconnect(Component.text("Rejected Discord Connection Request", NamedTextColor.RED));
+        do {
+            linkingState = linkingManager.startLinking(mcUuid, discordState);
+            audience.showDialog(generateMinecraftDialog(linkingState.discordState(), bedrockEdition));
+            linkResult = linkingState.getLinkingResult();
+        } while(linkResult == LinkResult.REDISPLAY);
+
+        if (linkResult == LinkResult.FAIL) {
+            connection.disconnect(Component.text("Rejected Discord Connection Request"));
         }
+        audience.closeDialog(); // todo: does this work on bugrock
         linkingManager.cleanupLinking(linkingState);
     }
 
@@ -61,15 +74,30 @@ public class DialogListener implements Listener {
         }
     }
 
-    private Dialog generateMinecraftDialog(String discordState) {
+    private Dialog generateMinecraftDialog(String discordState, boolean bedrockEdition) {
+        Component linkSection;
+
+        if (bedrockEdition) {
+            linkSection = Component.text("Go to ").append(
+                Component.text("https://link.foundfortress.net", NamedTextColor.BLUE)
+            ).append(
+                Component.text(" and use code ")
+            ).append(
+                Component.text(discordState, NamedTextColor.GOLD)
+            );
+        } else {
+            linkSection = Component.text(dialogData.dialogLinkText(), NamedTextColor.BLUE,
+                TextDecoration.UNDERLINED).clickEvent(ClickEvent.openUrl("https://link.foundfortress.net/link?state="
+                + discordState + "&java=true"));
+        }
+
         return Dialog.create(builder -> builder.empty()
-            .base(DialogBase.builder(Component.text(dialogData.dialogHeader(), NamedTextColor.AQUA))
+            .base(DialogBase.builder(Component.text(dialogData.dialogHeader(), bedrockEdition ? NamedTextColor.BLACK :
+                    NamedTextColor.AQUA))
                 .canCloseWithEscape(false)
                 .body(List.of(
                     DialogBody.plainMessage(Component.text(dialogData.dialogBody())),
-                    DialogBody.plainMessage(Component.text(dialogData.dialogLinkText(), NamedTextColor.BLUE,
-                        TextDecoration.UNDERLINED).clickEvent(ClickEvent.openUrl("https://link.foundfortress.net/link/"
-                        + discordState))), // todo: config
+                    DialogBody.plainMessage(linkSection), // todo: config
                     DialogBody.plainMessage(Component.text(dialogData.dialogFooter(), NamedTextColor.DARK_GRAY))
                 ))
                 .build()

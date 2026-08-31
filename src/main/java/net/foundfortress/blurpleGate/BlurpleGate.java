@@ -1,76 +1,106 @@
+/*
+ * net.foundfortress.blurpleGate.BlurpleGate
+ * Copyright (C) 2026 FoundFortress
+ *
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
+ * <https://www.gnu.org/licenses/>.
+ */
+
 package net.foundfortress.blurpleGate;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
-import org.bukkit.Bukkit;
-import org.bukkit.configuration.file.FileConfiguration;
+import org.bstats.bukkit.Metrics;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.jetbrains.annotations.NotNull;
+import org.spongepowered.configurate.CommentedConfigurationNode;
+import org.spongepowered.configurate.ConfigurateException;
+import org.spongepowered.configurate.ConfigurationNode;
+import org.spongepowered.configurate.hocon.HoconConfigurationLoader;
+import org.spongepowered.configurate.serialize.SerializationException;
 
-import java.io.IOException;
 import java.sql.SQLException;
-import java.util.*;
 
+/**
+ * A PaperMC Plugin that allows DiscordSRV users to link via OAuth2 instead of a code exchange.
+ * @author Seth Peace
+ * @version 1.0-SNAPSHOT
+ */
 public final class BlurpleGate extends JavaPlugin {
-    private LinkingManager linkingManager;
-    private DatabaseManager databaseManager;
-    private DiscordCallbackServer discordCallbackServer;
+    private final LinkingManager linkingManager = new LinkingManager();
+    private final DatabaseManager databaseManager = new DatabaseManager();
+    private final DiscordCallbackServer discordCallbackServer = new DiscordCallbackServer();
 
-    public static BlurpleGate getPlugin() {
+    private final HoconConfigurationLoader configLoader = HoconConfigurationLoader.builder()
+            .path(getDataPath().resolve(Constants.CONFIG_PATH))
+            .build();
+    private final ConfigurationNode configRootNode = configLoader.load();
+
+    public BlurpleGate() throws ConfigurateException {}
+
+    /**
+     * Get the active instance of BlurpleGate from Bukkit.
+     * @return The active instance of BlurpleGate
+     */
+    public static @NotNull BlurpleGate getPlugin() {
         return getPlugin(BlurpleGate.class);
     }
 
-    public LinkingManager getLinkingManager() {
+    /**
+     * Get the active instance of the Linking Manager.
+     * @return The active instance of the Linking Manager
+     */
+    public @NotNull LinkingManager getLinkingManager() {
         return linkingManager;
     }
 
-    public DatabaseManager getDatabaseManager() {
+    /**
+     * Get the active instance of the Database Manager.
+     * @return The active instance of the Database Manager
+     */
+    public @NotNull DatabaseManager getDatabaseManager() {
         return databaseManager;
+    }
+
+    public @NotNull BlurpleGateConfig getBlurpleGateConfig() throws SerializationException { // todo: store config in memory until reload command
+        return configRootNode.get(BlurpleGateConfig.class, new BlurpleGateConfig());
+    }
+
+    public void saveBlurpleGateConfig(BlurpleGateConfig config) throws ConfigurateException {
+        configRootNode.set(BlurpleGateConfig.class, config);
+        configLoader.save(configRootNode);
     }
 
     @Override
     public void onEnable() {
-        ComponentLogger logger = getComponentLogger();
+        int pluginId = 33751;
+        Metrics metrics = new Metrics(this, pluginId);
 
-        saveDefaultConfig();
-        FileConfiguration config = getConfig();
-        String clientId = config.getString("oauth2.client_id");
-        String clientSecret = config.getString("oauth2.client_secret");
-        String redirectURI = config.getString("oauth2.redirect_uri");
-
-        if (Objects.equals(clientId, "REPLACEME") || Objects.equals(clientSecret, "REPLACEME") ||
-                Objects.equals(redirectURI, "REPLACEME")) {
-            logger.warn(Component.text("Invalid config.yml"));
-            Bukkit.getPluginManager().disablePlugin(this);
-            return;
-        }
-
-        String header = config.getString("dialog.header");
-        String body = config.getString("dialog.body");
-        String button = config.getString("dialog.button");
-        String footer = config.getString("dialog.footer");
-
-        getServer().getPluginManager().registerEvents(
-            new DialogListener(new DialogData(header, body, button, footer)), this);
+        getServer().getPluginManager().registerEvents(new DialogListener(), this);
 
         try {
-            databaseManager = new DatabaseManager().connect();
-        } catch (SQLException e) {
-            // todo: log
-        }
-
-        linkingManager = new LinkingManager(clientId, clientSecret, redirectURI);
-        discordCallbackServer = new DiscordCallbackServer();
-        try {
+            saveBlurpleGateConfig(getBlurpleGateConfig());
             discordCallbackServer.start(8080); // todo: config option
-        } catch (IOException e) {
-            logger.warn(Component.text(e.toString()));
+            databaseManager.connect();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
-
-        logger.info(Component.text("Welcome to BlurpleGate | A FoundFortress Project"));
     }
 
     @Override
     public void onDisable() {
-        // Plugin shutdown logic
+        discordCallbackServer.stop();
+
+        try {
+            databaseManager.disconnect();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

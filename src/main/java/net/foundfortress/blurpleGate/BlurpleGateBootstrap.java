@@ -1,5 +1,5 @@
 /*
- * net.foundfortress.blurpleGate.LinkResult
+ * net.foundfortress.blurpleGate.BlurpleGateBootstrap
  * Copyright (C) 2026 FoundFortress
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
@@ -16,8 +16,14 @@
 
 package net.foundfortress.blurpleGate;
 
-public enum LinkResult {
-    SUCCESS,
-    FAIL,
-    REDISPLAY
+import io.papermc.paper.plugin.bootstrap.BootstrapContext;
+import io.papermc.paper.plugin.bootstrap.PluginBootstrap;
+
+import static net.foundfortress.blurpleGate.BlurpleGateCommands.registerCommands;
+
+public class BlurpleGateBootstrap implements PluginBootstrap {
+    @Override
+    public void bootstrap(BootstrapContext context) {
+        registerCommands(context.getLifecycleManager());
+    }
 }

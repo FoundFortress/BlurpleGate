@@ -1,8 +1,25 @@
+/*
+ * net.foundfortress.blurpleGate.DiscordCallbackServer
+ * Copyright (C) 2026 FoundFortress
+ *
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
+ * <https://www.gnu.org/licenses/>.
+ */
+
 package net.foundfortress.blurpleGate;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
+import org.spongepowered.configurate.serialize.SerializationException;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,6 +28,7 @@ import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class DiscordCallbackServer {
@@ -20,22 +38,10 @@ public class DiscordCallbackServer {
         server = HttpServer.create(new InetSocketAddress(port), 0);
 
         server.createContext("/", new RootHandler());
-        server.createContext("/link", new LinkHandler());
-        server.createContext("/callback", new CallbackHandler());
-        server.createContext("/favicon.ico", new StaticHandler("/img/favicon.ico",
-            StaticHandler.ContentType.ICO));
-        server.createContext("/favicon-16x16.png", new StaticHandler("/img/favicon-16x16.png",
-            StaticHandler.ContentType.PNG));
-        server.createContext("/favicon-32x32.png", new StaticHandler("/img/favicon-32x32.png",
-            StaticHandler.ContentType.PNG));
-        server.createContext("/apple-touch-icon.png", new StaticHandler("/img/apple-touch-icon.png",
-            StaticHandler.ContentType.PNG));
-        server.createContext("/site.webmanifest", new StaticHandler("/img/site.webmanifest",
-            StaticHandler.ContentType.WEBMANIFEST));
-        server.createContext("/android-chrome-192x192.png",
-            new StaticHandler("/img/android-chrome-192x192.png", StaticHandler.ContentType.PNG));
-        server.createContext("/android-chrome-512x512.png",
-            new StaticHandler("/img/android-chrome-512x512.png", StaticHandler.ContentType.PNG));
+        server.createContext(Constants.ServerPaths.LINK, new LinkHandler());
+        server.createContext(Constants.ServerPaths.CALLBACK, new CallbackHandler());
+
+        StaticHandler.registerStaticHandlers(server, Constants.ResourcePaths.IMAGE_BASE, Constants.ResourcePaths.IMAGES);
 
         server.setExecutor(null);
         server.start();
@@ -48,42 +54,20 @@ public class DiscordCallbackServer {
     }
 
     private static class RootHandler implements HttpHandler {
-        public static final String HTML_TEMPLATE = """
-            <!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="utf-8">
-                <title>BlurpleGate</title>
-                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
-                <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-                <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-                <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
-                <link rel="manifest" href="/site.webmanifest">
-            </head>
-            <body>
-                <main class="container">
-                    <section>
-                        <h1>Enter Your Link Code Here</h1>
-                        <form action="/link" method="GET">
-                            <input placeholder="000000" maxlength="6" required minlength="6" autofocus name="state" />
-                            <button type="submit">Submit</button>
-                        </form>
-                    </section>
-                 </main>
-                 <footer class="container">
-                    <small>Powered by <a href="https://plugins.foundfortress.net/blurplegate">BlurpleGate</a></small>
-                 </footer>
-            </body>
-            </html>
-            """;
-
         @Override
         public void handle(HttpExchange exchange) throws IOException {
+            String html;
+
+            try(InputStream is = BlurpleGate.class.getResourceAsStream(Constants.ResourcePaths.INDEX_HTML)) {
+                assert is != null;
+                html = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            }
+
             exchange.getResponseHeaders().set("Content-Type", "text/html");
-            exchange.sendResponseHeaders(200, HTML_TEMPLATE.getBytes().length);
+            exchange.sendResponseHeaders(200, html.getBytes().length);
 
             try (OutputStream os = exchange.getResponseBody()) {
-                os.write(HTML_TEMPLATE.getBytes());
+                os.write(html.getBytes());
             }
         }
     }
@@ -98,63 +82,68 @@ public class DiscordCallbackServer {
             }
 
             exchange.getResponseHeaders().set("Location",
-                "https://discord.com/oauth2/authorize?client_id=1534963763432783903&response_type=code&" +
-                    "redirect_uri=https%3A%2F%2Flink.foundfortress.net%2Fcallback&scope=guilds.join+identify&state=" +
-                    discordState); // todo: configuration, use existing query params builder
+                Constants.DiscordPaths.AUTH_BASE
+                    .resolve(Util.formatQueryParams(
+                        getQueryParamMap(discordState)
+                    )).toString()
+            );
             exchange.sendResponseHeaders(302, 0);
             exchange.close();
+        }
+
+        private static Map<String, String> getQueryParamMap(String discordState) throws SerializationException {
+            BlurpleGateConfig config = BlurpleGate.getPlugin().getBlurpleGateConfig();
+
+            Map<String, String> queryParams = new HashMap<>();
+            queryParams.put("client_id", config.oauth2.clientId);
+            queryParams.put("response_type", "code");
+            queryParams.put("redirect_uri", Util.getRedirectUri());
+            queryParams.put("state", discordState);
+
+            StringBuilder scope = new StringBuilder("identify");
+            if (config.behavior.collectEmailAddresses) {
+                scope.append("+email");
+            }
+            if (config.behavior.firstJoinPrompt.guildRequirementMode ==
+                    BlurpleGateConfig.GuildRequirementMode.AUTOMATIC) {
+                scope.append("+guilds.join");
+            }
+            queryParams.put("scope", scope.toString());
+            return queryParams;
         }
     }
 
     private static class CallbackHandler implements HttpHandler {
-        public static final String HTML_TEMPLATE = """
-            <!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="utf-8">
-                <title>BlurpleGate</title>
-                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
-                <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-                <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-                <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
-                <link rel="manifest" href="/site.webmanifest">
-            </head>
-            <body>
-                <main class="container">
-                    <section>
-                        <h1>%s</h1>
-                        <p>%s</p>
-                    </section>
-                </main>
-                <footer class="container">
-                    <small>Powered by <a href="https://plugins.foundfortress.net/blurplegate">BlurpleGate</a></small>
-                </footer>
-            </body>
-            </html>
-            """;
-
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             String response;
+            String htmlTemplate;
 
             Map<String, String> queryParams = getQueryParams(exchange);
             String discordCode = queryParams.get("code");
             String discordState = queryParams.get("state");
+
+            try(InputStream is = BlurpleGate.class.getResourceAsStream(Constants.ResourcePaths.CALLBACK_TEMPLATE_HTML)) {
+                assert is != null;
+                htmlTemplate = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            }
 
             if (discordCode == null) {
                 String error = queryParams.get("error");
                 String errorDescription = queryParams.get("error_description");
                 BlurpleGate.getPlugin().getLinkingManager().cancelLinkingWithState(discordState);
 
-                response = HTML_TEMPLATE.formatted(error, errorDescription);
-                exchange.getResponseHeaders().set("Content-Type", "text/html");
+                response = htmlTemplate.formatted(error, errorDescription);
+                exchange.getResponseHeaders().set("Content-Type", Constants.ContentType.HTML.getMimeType());
                 exchange.sendResponseHeaders(500, response.getBytes().length);
             } else {
                 BlurpleGate.getPlugin().getLinkingManager().completeLinking(discordState, discordCode);
 
-                response = HTML_TEMPLATE.formatted("Accounts Linked Successfully", "You may now close this tab" +
-                    " and return to Minecraft.");
-                exchange.getResponseHeaders().set("Content-Type", "text/html");
+                response = htmlTemplate.formatted(
+                    Constants.UserStrings.ACCOUNT_LINK_SUCCESS_HEADER,
+                    Constants.UserStrings.ACCOUNT_LINK_SUCCESS_BODY
+                );
+                exchange.getResponseHeaders().set("Content-Type", Constants.ContentType.HTML.getMimeType());
                 exchange.sendResponseHeaders(200, response.getBytes().length);
             }
 
@@ -166,9 +155,9 @@ public class DiscordCallbackServer {
 
     private static class StaticHandler implements HttpHandler {
         private final String resourcePath;
-        private final ContentType contentType;
+        private final Constants.ContentType contentType;
 
-        public StaticHandler(String resourcePath, ContentType contentType) {
+        public StaticHandler(String resourcePath, Constants.ContentType contentType) {
             this.resourcePath = resourcePath;
             this.contentType = contentType;
         }
@@ -192,19 +181,14 @@ public class DiscordCallbackServer {
             }
         }
 
-        public enum ContentType {
-            PNG("image/png"),
-            ICO("image/x-icon"),
-            WEBMANIFEST("application/manifest+json");
+        public static void registerStaticHandlers(HttpServer server, String baseLocalPath, List<String> resources) {
+            StringBuilder sb;
+            for (String resource : resources) {
+                sb = new StringBuilder(baseLocalPath);
+                sb.append(resource);
 
-            private final String mimeType;
-
-            ContentType(String mimeType) {
-                this.mimeType = mimeType;
-            }
-
-            public String getMimeType() {
-                return this.mimeType;
+                server.createContext(resource,
+                    new StaticHandler(sb.toString(), Constants.ContentType.fromFilename(resource)));
             }
         }
     }

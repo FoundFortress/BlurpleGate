@@ -1,4 +1,23 @@
+/*
+ * net.foundfortress.blurpleGate.DatabaseManager
+ * Copyright (C) 2026 FoundFortress
+ *
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+ * Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along with this program. If not, see
+ * <https://www.gnu.org/licenses/>.
+ */
+
 package net.foundfortress.blurpleGate;
+
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.sql.*;
 import java.time.Instant;
@@ -7,15 +26,8 @@ import java.util.UUID;
 public class DatabaseManager {
     Connection conn;
 
-    public DatabaseManager connect() throws SQLException {
-        try {
-            Class.forName("org.sqlite.JDBC");
-        } catch (ClassNotFoundException _) {
-            BlurpleGate.getPlugin().getComponentLogger().error("PaperMC did not provide org.sqlite.JDBC. This error " +
-                "definitely shouldn't occur under normal circumstances.");
-        }
-
-        conn = DriverManager.getConnection("jdbc:sqlite:plugins/BlurpleGate/database.db"); // todo: perhaps support "real" databases idk sqlites probably fine actually
+    public void connect() throws SQLException {
+        conn = DriverManager.getConnection(Constants.DB_URL); // todo: perhaps support "real" databases idk sqlites probably fine actually
         try (Statement stmt = conn.createStatement()) {
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS tokens(
@@ -26,10 +38,9 @@ public class DatabaseManager {
                   access_token_expires DATETIME NOT NULL
                 );""");
         }
-        return this;
     }
 
-    public void insertTokens(Tokens tokens) throws SQLException {
+    public void insertTokens(@NotNull Tokens tokens) throws SQLException {
         try (PreparedStatement pstmt = conn.prepareStatement("""
                 INSERT INTO tokens(mc_uuid, discord_id, access_token, refresh_token, access_token_expires)
                 VALUES (?, ?, ?, ?, ?);""")) {
@@ -42,14 +53,14 @@ public class DatabaseManager {
         }
     }
 
-    public Tokens getTokensFromMcUuid(UUID mcUuid) throws SQLException {
+    public @Nullable Tokens getTokensFromMcUuid(@NotNull UUID mcUuid) throws SQLException {
         try (PreparedStatement pstmt = conn.prepareStatement("SELECT * FROM tokens WHERE mc_uuid=?;")) {
             pstmt.setString(1, mcUuid.toString());
             return getTokens(pstmt);
         }
     }
 
-    public Tokens getTokensFromDiscordId(String discordId) throws SQLException {
+    public @Nullable Tokens getTokensFromDiscordId(@NotNull String discordId) throws SQLException {
         try (PreparedStatement pstmt = conn.prepareStatement("SELECT * FROM tokens WHERE discord_id=?;")) {
             pstmt.setString(1, discordId);
             return getTokens(pstmt);
@@ -60,7 +71,7 @@ public class DatabaseManager {
         conn.close();
     }
 
-    private Tokens getTokens(PreparedStatement pstmt) throws SQLException {
+    private @Nullable Tokens getTokens(PreparedStatement pstmt) throws SQLException {
         try (ResultSet resultSet = pstmt.executeQuery()) {
             if (!resultSet.next()) return null;
             return new Tokens(
@@ -80,8 +91,9 @@ public class DatabaseManager {
         String refreshToken,
         long accessTokenExpires // Unix Timestamp
     ) {
-        public static Tokens fromDiscordTokenResponse(UUID mcUuid, long discordId,
-                                                      LinkingManager.DiscordTokenResponse discordTokenResponse) {
+        public static @NotNull Tokens fromDiscordTokenResponse(@NotNull UUID mcUuid, long discordId,
+                                                               @NotNull LinkingManager.DiscordTokenResponse
+                                                                   discordTokenResponse) {
             long unixTimestamp = Instant.now().getEpochSecond();
             return new Tokens(mcUuid, discordId, discordTokenResponse.accessToken(),
                 discordTokenResponse.refreshToken(), unixTimestamp + discordTokenResponse.expiresIn());

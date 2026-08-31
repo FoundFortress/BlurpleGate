@@ -30,13 +30,14 @@
     <section>
         <h1>Enter Your Link Code Here</h1>
         <form action="/link/" method="GET">
-            <input placeholder="000000" maxlength="6" required minlength="6" autofocus name="state" />
+            <label for="state">Link Code:</label>
+            <input name="state" id="state" placeholder="000000" required autofocus maxlength="6" minlength="6" />
             <button type="submit">Submit</button>
         </form>
     </section>
 </main>
 <footer class="container">
-    <small>Powered by <a href="https://plugins.foundfortress.net/blurplegate">BlurpleGate</a></small>
+    <small>Powered by <a href="https://plugins.foundfortress.net/blurplegate" target="_blank">BlurpleGate</a></small>
 </footer>
 </body>
 </html>

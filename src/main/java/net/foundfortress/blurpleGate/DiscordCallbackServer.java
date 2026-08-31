@@ -27,6 +27,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,8 +35,10 @@ import java.util.Map;
 public class DiscordCallbackServer {
     private HttpServer server;
 
-    public void start(int port) throws IOException {
-        server = HttpServer.create(new InetSocketAddress(port), 0);
+    public void start() throws IOException {
+        BlurpleGateConfig config = BlurpleGate.getPlugin().getBlurpleGateConfig();
+
+        server = HttpServer.create(new InetSocketAddress(config.callbackServer.listenPort), 0);
 
         server.createContext("/", new RootHandler());
         server.createContext(Constants.ServerPaths.LINK, new LinkHandler());
@@ -48,9 +51,14 @@ public class DiscordCallbackServer {
     }
 
     public void stop() {
-        if(server != null) {
-            server.stop(0);
-        }
+        if(server == null) return;
+
+        server.stop(0);
+    }
+
+    public void restart() throws IOException {
+        stop();
+        start();
     }
 
     private static class RootHandler implements HttpHandler {
@@ -137,7 +145,11 @@ public class DiscordCallbackServer {
                 exchange.getResponseHeaders().set("Content-Type", Constants.ContentType.HTML.getMimeType());
                 exchange.sendResponseHeaders(500, response.getBytes().length);
             } else {
-                BlurpleGate.getPlugin().getLinkingManager().completeLinking(discordState, discordCode);
+                try {
+                    BlurpleGate.getPlugin().getLinkingManager().completeLinking(discordState, discordCode);
+                } catch (InterruptedException | SQLException e) {
+                    throw new RuntimeException(e);
+                }
 
                 response = htmlTemplate.formatted(
                     Constants.UserStrings.ACCOUNT_LINK_SUCCESS_HEADER,

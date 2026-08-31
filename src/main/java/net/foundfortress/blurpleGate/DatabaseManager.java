@@ -27,7 +27,7 @@ public class DatabaseManager {
     Connection conn;
 
     public void connect() throws SQLException {
-        conn = DriverManager.getConnection(Constants.DB_URL); // todo: perhaps support "real" databases idk sqlites probably fine actually
+        conn = DriverManager.getConnection(Constants.DB_URL);
         try (Statement stmt = conn.createStatement()) {
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS tokens(
@@ -67,7 +67,16 @@ public class DatabaseManager {
         }
     }
 
+    public void deleteTokensFromMcUuid(@NotNull UUID mcUuid) throws SQLException {
+        try (PreparedStatement pstmt = conn.prepareStatement("DELETE FROM tokens WHERE mc_uuid=?")) {
+            pstmt.setString(1, mcUuid.toString());
+            pstmt.execute();
+        }
+    }
+
     public void disconnect() throws SQLException {
+        if (conn == null) return;
+
         conn.close();
     }
 

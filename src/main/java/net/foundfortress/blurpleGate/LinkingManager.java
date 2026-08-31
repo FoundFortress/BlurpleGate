@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import github.scarsz.discordsrv.DiscordSRV;
+import github.scarsz.discordsrv.dependencies.jda.api.entities.Guild;
 import github.scarsz.discordsrv.dependencies.jda.api.entities.User;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 import org.spongepowered.configurate.serialize.SerializationException;
@@ -32,6 +33,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -66,7 +68,7 @@ public class LinkingManager {
         return new LinkingState(future, discordState, uuid);
     }
 
-    public void completeLinking(String discordState, String discordCode) throws SerializationException {
+    public void completeLinking(String discordState, String discordCode) throws IOException, InterruptedException, SQLException {
         UUID mcUuid = discordStateMap.get(discordState);
         BlurpleGateConfig config = BlurpleGate.getPlugin().getBlurpleGateConfig();
 
@@ -82,37 +84,34 @@ public class LinkingManager {
             .build();
         ComponentLogger logger = BlurpleGate.getPlugin().getComponentLogger();
 
-        try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            DiscordTokenResponse discordTokenResponse = mapper.readValue(response.body(), DiscordTokenResponse.class);
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        DiscordTokenResponse discordTokenResponse = mapper.readValue(response.body(), DiscordTokenResponse.class);
 
-            String accessToken = discordTokenResponse.accessToken();
-            long discordId = getDiscordIdFromToken(accessToken);
+        String accessToken = discordTokenResponse.accessToken();
+        long discordId = getDiscordIdFromToken(accessToken);
 
-            BlurpleGate.getPlugin().getDatabaseManager().insertTokens(
-                DatabaseManager.Tokens.fromDiscordTokenResponse(mcUuid, discordId, discordTokenResponse)
-            );
+        DatabaseManager.Tokens tokens = DatabaseManager.Tokens.fromDiscordTokenResponse(mcUuid, discordId, discordTokenResponse);
+        BlurpleGate.getPlugin().getDatabaseManager()
+            .insertTokens(tokens);
 
-            DiscordSRV
-                .getPlugin()
-                .getAccountLinkManager()
-                .link(String.valueOf(discordId), mcUuid); // todo: test this, i havent actually done that yet
-
-            DiscordSRV
-                .getPlugin()
-                .getMainGuild()
-                .addMember(accessToken, User.fromId(discordId))
-                .queue(
-                    _ -> logger.info("Added user to guild"), // todo: professional, detailed log messages
-                    error -> logger.warn("Error adding user to guild: {}", error.getMessage())
-                );
-        } catch (Exception e) { // todo: avoid broad try/catch
-            logger.warn("Error getting token from Discord while linking UUID {} (state: {}, code: {})",
-                mcUuid.toString(), discordState, discordCode);
-            logger.warn(e.toString());
-        }
+        DiscordSRV.getPlugin().getAccountLinkManager()
+            .link(String.valueOf(discordId), mcUuid);
+        addMemberToGuild(tokens);
 
         completeFuture(discordStateMap.get(discordState), LinkResult.SUCCESS);
+    }
+
+    public boolean addMemberToGuild(DatabaseManager.Tokens tokens) {
+        Guild guild = DiscordSRV.getPlugin().getMainGuild();
+
+        if (guild.getMemberById(tokens.discordId()) != null) return true;
+
+        try {
+            guild.addMember(tokens.accessToken(), User.fromId(tokens.discordId())).queue(); // todo: auto refresh access token
+            return true;
+        } catch (Exception _) { // todo: avoid broad try/catch across codebase | actually parse errors and gracefully handle them
+            return false;
+        }
     }
 
     public void redisplayLinkPromptWithState(String discordState) {

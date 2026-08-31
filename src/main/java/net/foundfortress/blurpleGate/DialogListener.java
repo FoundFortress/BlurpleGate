@@ -43,10 +43,11 @@ import org.spongepowered.configurate.serialize.SerializationException;
 
 import java.net.MalformedURLException;
 import java.net.URI;
+import java.sql.SQLException;
 import java.util.*;
-import java.util.stream.Stream;
 
 public class DialogListener implements Listener {
+    @SuppressWarnings("PatternValidation")
     private static final Key CANCEL_KEY = Key.key("blurplegate:dialog/cancel");
     private static final ActionButton CANCEL_BUTTON = ActionButton
         .builder(Component.text("Cancel"))
@@ -57,21 +58,32 @@ public class DialogListener implements Listener {
 
     @EventHandler
     public void onPlayerConfigure(AsyncPlayerConnectionConfigureEvent event)
-        throws SerializationException, MalformedURLException {
+        throws SerializationException, SQLException {
         PlayerConfigurationConnection connection = event.getConnection();
         UUID mcUuid = connection.getProfile().getId();
         if (mcUuid == null) return;
 
         LinkingState linkingState;
         LinkResult linkResult;
+        DatabaseManager.Tokens tokens;
         String discordState = null;
-        LinkingManager linkingManager = BlurpleGate.getPlugin().getLinkingManager();
+
+        DialogDisplayType dialogDisplayType = DialogDisplayType.LINK_ACCOUNT;
+
+        BlurpleGate plugin = BlurpleGate.getPlugin();
+        LinkingManager linkingManager = plugin.getLinkingManager();
+        DatabaseManager databaseManager = plugin.getDatabaseManager();
         Audience audience = connection.getAudience();
+
+        if ((tokens = databaseManager.getTokensFromMcUuid(mcUuid)) != null) {
+            if (linkingManager.addMemberToGuild(tokens)) return;
+            dialogDisplayType = DialogDisplayType.RELINK_ACCOUNT;
+        }
 
         do {
             linkingState = linkingManager.startLinking(mcUuid, discordState);
             discordState = linkingState.discordState();
-            audience.showDialog(generateMinecraftDialog(discordState, getPlatformFromUuid(mcUuid), DialogDisplayType.LINK_ACCOUNT)); // todo: what dialog type?
+            audience.showDialog(generateMinecraftDialog(discordState, getPlatformFromUuid(mcUuid), dialogDisplayType));
             linkResult = linkingState.getLinkingResult();
         } while(linkResult == LinkResult.REDISPLAY);
 
@@ -96,8 +108,7 @@ public class DialogListener implements Listener {
     }
 
     private @NotNull Dialog generateMinecraftDialog(@NotNull String discordState, @NotNull Platform platform,
-                                                    @NotNull DialogListener.DialogDisplayType dialogDisplayType)
-        throws SerializationException, MalformedURLException {
+                                                    @NotNull DialogListener.DialogDisplayType dialogDisplayType) {
         BlurpleGateConfig config = BlurpleGate.getPlugin().getBlurpleGateConfig();
         BlurpleGateConfig.PlatformMessage msg = null;
 

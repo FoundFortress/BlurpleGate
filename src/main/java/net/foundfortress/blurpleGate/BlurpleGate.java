@@ -19,13 +19,9 @@ package net.foundfortress.blurpleGate;
 import org.bstats.bukkit.Metrics;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
-import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.ConfigurateException;
 import org.spongepowered.configurate.ConfigurationNode;
 import org.spongepowered.configurate.hocon.HoconConfigurationLoader;
-import org.spongepowered.configurate.serialize.SerializationException;
-
-import java.sql.SQLException;
 
 /**
  * A PaperMC Plugin that allows DiscordSRV users to link via OAuth2 instead of a code exchange.
@@ -40,7 +36,8 @@ public final class BlurpleGate extends JavaPlugin {
     private final HoconConfigurationLoader configLoader = HoconConfigurationLoader.builder()
             .path(getDataPath().resolve(Constants.CONFIG_PATH))
             .build();
-    private final ConfigurationNode configRootNode = configLoader.load();
+    private ConfigurationNode configRootNode;
+    private BlurpleGateConfig config;
 
     public BlurpleGate() throws ConfigurateException {}
 
@@ -68,11 +65,21 @@ public final class BlurpleGate extends JavaPlugin {
         return databaseManager;
     }
 
-    public @NotNull BlurpleGateConfig getBlurpleGateConfig() throws SerializationException { // todo: store config in memory until reload command
-        return configRootNode.get(BlurpleGateConfig.class, new BlurpleGateConfig());
+    public @NotNull DiscordCallbackServer getDiscordCallbackServer() {
+        return discordCallbackServer;
     }
 
-    public void saveBlurpleGateConfig(BlurpleGateConfig config) throws ConfigurateException {
+    public void reloadBlurpleGateConfig() throws ConfigurateException {
+        configRootNode = configLoader.load();
+        config = configRootNode.get(BlurpleGateConfig.class, new BlurpleGateConfig());
+        saveBlurpleGateConfig();
+    }
+
+    public @NotNull BlurpleGateConfig getBlurpleGateConfig() {
+        return config;
+    }
+
+    public void saveBlurpleGateConfig() throws ConfigurateException {
         configRootNode.set(BlurpleGateConfig.class, config);
         configLoader.save(configRootNode);
     }
@@ -85,8 +92,8 @@ public final class BlurpleGate extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new DialogListener(), this);
 
         try {
-            saveBlurpleGateConfig(getBlurpleGateConfig());
-            discordCallbackServer.start(8080); // todo: config option
+            reloadBlurpleGateConfig();
+            discordCallbackServer.start();
             databaseManager.connect();
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -98,8 +105,10 @@ public final class BlurpleGate extends JavaPlugin {
         discordCallbackServer.stop();
 
         try {
+            saveBlurpleGateConfig();
+
             databaseManager.disconnect();
-        } catch (SQLException e) {
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
